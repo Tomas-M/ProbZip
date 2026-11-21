@@ -2,7 +2,7 @@
 
 Samostatný bezeztrátový kompresor krátkých textů a adres. Soubor **`probzip.js` obsahuje encoder, decoder i natrénovaný model**, funguje v prohlížeči i v Node.js a nepotřebuje žádné závislosti ani připojení k internetu. JavaScript je čitelný a komentovaný; pouze data modelu jsou zabalena pomocí DEFLATE a uložena jako Base64.
 
-Celý soubor má **261 069 bajtů (254,95 KiB)**, tedy méně než 256 KiB. Velikost zahrnuje kód, model i komentáře, před případnou HTTP kompresí.
+Celý soubor má **261 768 bajtů (255,63 KiB)**, tedy méně než 256 KiB. Velikost zahrnuje kód, model i komentáře, před případnou HTTP kompresí.
 
 ProbZip je samostatný nástupce projektu [bpezip](https://github.com/Tomas-M/bpezip). Původní implementace BPE zůstává v původním repozitáři pro referenci; ProbZip používá pravděpodobnostní model a aritmetické kódování.
 
@@ -53,6 +53,29 @@ První bajt je **87 pro tento model**, nebo **0 pro nekomprimovaný záznam**. N
 Formát ProbZipu není kompatibilní s původním bpezip. Pro dekódování uložených dat musí být dostupný stejný model, který se použil při jejich kompresi.
 
 Před odstraněním benchmarků byla ověřena shoda všech 5 650 syntetických adres: **274 119 → 150 648 bajtů**, tedy **54,96 % původní velikosti**. Jde o dosavadní syntetický soubor, nikoli záruku výsledku na skutečných adresách nebo obecné próze.
+
+## Rychlost a paměť
+
+Runtime předpočítává součty četností při načtení modelu a používá jedno pomocné pole pro vylučování znaků. Původní verze toto pole o velikosti 31 732 bajtů vytvářela pro každý komprimovaný nebo dekomprimovaný záznam. Nová verze každému volání přiděluje vlastní rozsah číselných značek; ošetřuje jejich přetečení i přerušení dekódování chybou. `clearCache()` uvolní také toto pole.
+
+**Model, formát 87 i komprimované bajty zůstávají stejné.** Úprava zrychluje zpracování a omezuje dočasné alokace; kompresní poměr nemění. Soubor narostl proti prvnímu vydání o 699 bajtů.
+
+Porovnání s prvním vydáním (`b52eb69`), měřeno 21. 11. 2026 na Windows x64, Node.js 24.15.0 a Intel Core i5-8250U:
+
+| Vstupy | Operace | Původní čas na řetězec | Nový čas na řetězec | Zrychlení |
+| --- | --- | ---: | ---: | ---: |
+| 16 adres z `test.html` | Komprese | 76,29 µs | 53,63 µs | 1,42× |
+| 16 adres z `test.html` | Dekomprese | 96,64 µs | 67,83 µs | 1,42× |
+| 3 311 textů vynechaných z trénování | Komprese | 29,88 µs | 12,22 µs | 2,45× |
+| 3 311 textů vynechaných z trénování | Dekomprese | 34,12 µs | 13,73 µs | 2,49× |
+
+Větší vzorek obsahuje 1 000 záznamů GeoNames, 1 000 japonských adresních komponent, 1 000 tchajwanských uličních komponent a 311 záznamů libpostal. Nejde o 3 311 úplných adres se jmény. Zdrojové snapshoty odpovídají hashům v `NOTICE`; texty pocházejí z testovací části rozdělení, bez přesných překryvů s trénováním a validační částí. Obě verze zde dávají **65 587 → 31 223 bajtů**. U 16 adres zůstává výsledek **958 → 634 bajtů**.
+
+Časy jsou mediány pěti samostatných procesů pro každou kombinaci verze, vstupů a operace, se střídáním pořadí verzí. Po první dávce a 1 500 zahřívacích voláních se měřilo 600 opakování souboru 16 adres, respektive šest opakování většího souboru. Měřený čas zahrnuje běžnou práci garbage collectoru; neobsahuje počáteční načtení modelu.
+
+Paměť se zaznamenávala zvlášť před tímto zahříváním, po první dávce, pomocí `process.resourceUsage().maxRSS`. Na 3 311 textech klesl medián špičky RSS při kompresi **58,67 → 49,13 MiB** a při dekompresi **79,95 → 53,67 MiB**. U 16 adres mají obě verze špičku přibližně 49 MiB. Jde o celý proces včetně Node.js, vstupů a prvního rozbalení modelu; hodnoty závisejí na prostředí a pracovním zatížení.
+
+Ověření zahrnovalo shodu výstupních bajtů a obnovu 4 336 textů, 300 binárních vstupů, 1 553 poškozených nebo zkrácených záznamů, pokračování po chybě, přetečení číselných značek a vymazání cache. Prošly také kontroly v prostředí bez Node.js API a sestavení souboru prostřednictvím trenéru.
 
 ## Trénování a stažení dat
 

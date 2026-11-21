@@ -209,6 +209,8 @@
       ignoreBOM: true
     });
     let model = null, offsets = null, points = null, ids = null, roots = null, cdf = null, normalized = null, escape = 0;
+    // Synchronous calls share a stamp array instead of allocating one per record.
+    let exclusionMarks = null, exclusionStamp = 0;
     // Accept Uint8Array/Buffer views without silently accepting other typed arrays.
     function bytesOf(input) {
       if (!ArrayBuffer.isView(input) || Object.prototype.toString.call(input) !== "[object Uint8Array]") throw new TypeError("Expected a Uint8Array");
@@ -229,6 +231,8 @@
       points = new Uint32Array(alphabet);
       ids = new Map;
       roots = new Uint16Array(alphabet + 1);
+      exclusionMarks = new Uint32Array(alphabet + 1);
+      exclusionStamp = 0;
       cdf = new Uint32Array(alphabet + 2);
       normalized = [];
       offsets = new Map;
@@ -263,13 +267,16 @@
         }
         const n = view.getUint16(pos, true);
         if (!n || n > 256 || pos + 2 + 3 * n > data.length || offsets.has(key)) throw new Error("Invalid context table");
-        let previous = -1;
+        let previous = -1, total = 0;
         for (let j = 0; j < n; j++) {
           const id = view.getUint16(pos + 2 + j * 3, true), f = data[pos + 4 + j * 3];
           if (id <= previous || id >= escape || !f) throw new Error("Invalid successor");
           previous = id;
+          total += f;
         }
-        offsets.set(key, pos);
+        // Store offset and frequency sum in one exact integer, without extra arrays.
+        // At most 256 successors with byte frequencies keep the sum below 65536.
+        offsets.set(key, pos * 65536 + total);
         pos += 2 + 3 * n;
       }
       if (pos !== data.length) throw new Error("Invalid model tail");
@@ -354,38 +361,30 @@
     function symbol(arithmetic, context, excluded, stamp, wanted) {
       const decoding = wanted === undefined, removed = [];
       for (let order = context.length; order > 0; order--) {
-        const offset = offsets.get(context.slice(-order));
-        if (offset === undefined) continue;
-        const n = model[offset] + 256 * model[offset + 1];
-        let total = 0, active = 0, start = -1, frequency = 0;
-        for (let j = 0; j < n; j++) {
-          const p = offset + 2 + j * 3, s = model[p] + 256 * model[p + 1], f = model[p + 2];
-          if (excluded[s] === stamp) continue;
-          if (s === wanted) {
-            start = total;
-            frequency = f;
+        const entry = offsets.get(context.slice(-order));
+        if (entry === undefined) continue;
+        const offset = Math.floor(entry / 65536), n = model[offset] + 256 * model[offset + 1];
+        let total = entry % 65536, active = n;
+        // The cached total is exact; only escaped symbols need subtracting.
+        if (removed.length) for (let j = 0; j < n; j++) {
+          const p = offset + 2 + j * 3, s = model[p] + 256 * model[p + 1];
+          if (excluded[s] === stamp) {
+            total -= model[p + 2];
+            active--;
           }
-          total += f;
-          active++;
         }
         if (!active) continue;
-        const sum = total + active;
-        if (decoding) {
-          const target = arithmetic.target(sum);
-          let cumulative = 0;
-          if (target < 0 || target >= sum) throw new Error("Invalid arithmetic interval");
-          if (target < total) for (let j = 0; j < n; j++) {
-            const p = offset + 2 + j * 3, s = model[p] + 256 * model[p + 1], f = model[p + 2];
-            if (excluded[s] === stamp) continue;
-            if (target < cumulative + f) {
-              arithmetic.interval(cumulative, cumulative + f, sum);
-              return s;
-            }
-            cumulative += f;
+        const sum = total + active, target = decoding ? arithmetic.target(sum) : -1;
+        if (decoding && (target < 0 || target >= sum)) throw new Error("Invalid arithmetic interval");
+        let cumulative = 0;
+        if (!decoding || target < total) for (let j = 0; j < n; j++) {
+          const p = offset + 2 + j * 3, s = model[p] + 256 * model[p + 1], f = model[p + 2];
+          if (excluded[s] === stamp) continue;
+          if (decoding ? target < cumulative + f : s === wanted) {
+            arithmetic.interval(cumulative, cumulative + f, sum);
+            return s;
           }
-        } else if (start >= 0) {
-          arithmetic.interval(start, start + frequency, sum);
-          return wanted;
+          cumulative += f;
         }
         arithmetic.interval(total, sum, sum);
         for (let j = 0; j < n; j++) {
@@ -451,8 +450,15 @@
     // ASCII case/digits; encoded symbols retain their original values exactly.
     function stream(bytes, length, decoding) {
       loadModel();
-      const arithmetic = new Arithmetic(decoding ? bytes : null), excluded = new Uint32Array(roots.length), output = decoding ? new Uint8Array(length) : null;
-      let context = "", pos = 0, stamp = 0;
+      const arithmetic = new Arithmetic(decoding ? bytes : null), excluded = exclusionMarks, output = decoding ? new Uint8Array(length) : null;
+      // Reserve stamps before decoding: failures must not leak marks to the next call.
+      // Byte length bounds the symbol count, including literal Unicode escapes.
+      if (exclusionStamp + length > 4294967295) {
+        excluded.fill(0);
+        exclusionStamp = 0;
+      }
+      let context = "", pos = 0, stamp = exclusionStamp;
+      exclusionStamp += length;
       while (pos < length) {
         const read = decoding ? null : readPoint(bytes, pos), wanted = decoding ? undefined : ids.get(read[0]) ?? escape;
         const id = symbol(arithmetic, context, excluded, ++stamp, wanted);
@@ -613,6 +619,8 @@
         roots = null;
         cdf = null;
         normalized = null;
+        exclusionMarks = null;
+        exclusionStamp = 0;
       },
       info: Object.freeze(definition.info)
     });
