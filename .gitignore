@@ -1,0 +1,3 @@
+# Downloaded archives, receipts and training reports are regenerated on demand.
+/.probzip-training/
+*.part

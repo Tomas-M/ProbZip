@@ -1,0 +1,100 @@
+ProbZip: code and model attribution
+==================================
+
+The JavaScript implementation is licensed under GPL-2.0; see LICENSE.
+The embedded probability model in probzip.js uses the four public
+sources below. Their data licenses and attributions remain applicable. No source
+organization endorses ProbZip. Distribute this NOTICE with the code and model.
+
+1. GeoNames geographical database, https://www.geonames.org/
+   https://download.geonames.org/export/dump/cities500.zip
+   Creative Commons Attribution 4.0 International:
+   https://creativecommons.org/licenses/by/4.0/
+
+2. Japan Post, UTF-8 postal-code address areas:
+   https://www.post.japanpost.jp/service/search/zipcode/download/utf-zip.html
+   https://www.post.japanpost.jp/service/search/zipcode/download/utf-readme.html
+   Japan Post states it does not assert copyright on its postal-code data and
+   permits redistribution. This statement concerns the dataset, not the website.
+
+3. Chunghwa Post Co., Ltd., Chinese/English street-name correspondence data:
+   https://data.gov.tw/dataset/152276
+   Taiwan Open Government Data License, version 1.0:
+   https://data.gov.tw/license
+
+4. libpostal public address/name dictionaries, copyright (c) 2015 openvenues:
+   https://github.com/openvenues/libpostal/tree/25099c506612b34b23b1bfe286ca6321fcf06f35/resources/dictionaries
+   Commit: 25099c506612b34b23b1bfe286ca6321fcf06f35
+   MIT license reproduced below. The original parser and its trained model are
+   not bundled. All 833 dictionary files (60 language folders plus shared 'all')
+   were considered, including public given-name/surname vocabulary.
+
+Transformations
+---------------
+Extracted geographical aliases, address components, translations and dictionary
+aliases; removed Japanese parenthetical district notes; grouped entities before
+90/5/5 partitioning; added deterministic synthetic numeric variants; deduplicated
+strings; weighted base strings by 1 and dictionary strings by 8. Counted Unicode
+contexts up to order five, allocated storage among script groups, pruned tables
+and quantized frequencies. Packed model fields with prefix/delta/varint coding
+and DEFLATE. These transformations do not reproduce the source databases or
+represent verified deliverable personal addresses.
+
+Released model identity and source snapshots
+-------------------------------------------
+Format: probzip-unicode-256k-v1; compressed record tag: 87
+Raw model SHA-256: 4aacc71fd2f39ca99e6c1c1fa9abcb55c1aec350b977739c6425ed3e47567ac6
+Training text SHA-256: d3a23975a95837a3e7ddc42079c0757a161ea3e1021465b1badfadb577ca723f
+Weighted corpus SHA-256: 21be2a3c99eb1fba24d077624550d04061eca3000ddf14555b9b019e3ce6a1a3
+Raw model budget: 455668 bytes; actual: 455661 bytes
+Unique training strings: 1965856
+Training UTF-8 bytes: 37992926
+Alphabet: 7932; contexts: 7621
+Environment used for verification: Node.js 24.15.0, zlib 1.3.1-e00f703.
+
+GeoNames
+  Archive bytes: 13935407
+  Archive SHA-256: 86c76d7f3eec04b51650877da433a1dd5c384c31e99c940300c1b37cb716a649
+  Extracted text SHA-256: 411c08684f093681e7a51980f6b917f7e344c01ca069715938c93f1e483642cc
+
+Japan Post UTF-8 postal areas
+  Archive bytes: 2033286
+  Archive SHA-256: db92fcf624bb7280e6f51900aebe03adeafbd168796e59412dbc22a80abb85b9
+  Extracted text SHA-256: 33a3a1e14a69778282cfb22c17ba0b5f888669d091ada93e1ba960f259f6b2d5
+
+Chunghwa Post Chinese/English street names
+  Archive bytes: 357604
+  Archive SHA-256: af83cf8798da940849edc1265a1078fe5d47daefb25bb874b5ab08b3dd0f0dde
+  Extracted text SHA-256: 182bf45c95dd8ae25bc9d6fd61cf0f2ef5c408f84b01657bb8d892b6ee8505f3
+
+libpostal address dictionaries
+  Archive bytes: 5611187
+  Archive SHA-256: 7586542af4db343e744f6128a997dd75bf25b3ddc54ed1af3810ea60d2880c3b
+
+The live GeoNames and postal URLs may change. Archive hashes above identify the
+released snapshot; future training records its own sources in the ignored cache.
+Keep the required data attributions with models you redistribute. If training
+changes the model, its runtime info and training receipt identify that new model;
+the release hashes in this NOTICE continue to describe the original release.
+
+The MIT License (MIT)
+
+Copyright (c) 2015 openvenues
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

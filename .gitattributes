@@ -1,0 +1,4 @@
+# Keep the codec byte-for-byte identical on Windows and Unix (256 KiB budget).
+probzip.js -text
+train-probzip.cjs text eol=lf
+test.html text eol=lf
