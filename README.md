@@ -2,7 +2,7 @@
 
 Samostatný bezeztrátový kompresor krátkých textů a adres. Soubor **`probzip.js` obsahuje encoder, decoder i natrénovaný model**, funguje v prohlížeči i v Node.js a nepotřebuje žádné závislosti ani připojení k internetu. JavaScript je čitelný a komentovaný; pouze data modelu jsou zabalena pomocí DEFLATE a uložena jako Base64.
 
-Celý soubor má **261 768 bajtů (255,63 KiB)**, tedy méně než 256 KiB. Velikost zahrnuje kód, model i komentáře, před případnou HTTP kompresí.
+Celý soubor má **260 476 bajtů (254,37 KiB)**, tedy méně než 256 KiB. Velikost zahrnuje kód, model i komentáře, před případnou HTTP kompresí.
 
 ProbZip je samostatný nástupce projektu [bpezip](https://github.com/Tomas-M/bpezip). Původní implementace BPE zůstává v původním repozitáři pro referenci; ProbZip používá pravděpodobnostní model a aritmetické kódování.
 
@@ -40,7 +40,7 @@ const restored = ProbZip.decodeBytes(ProbZip.encodeBytes(original));
 | `encodeBytes(Uint8Array)` | Komprimuje UTF-8/WTF-8; ostatní binární data uloží přímo. |
 | `decodeBytes(Uint8Array)` | Obnoví původní bajty. Přijímá i Node.js `Buffer`. |
 | `clearCache()` | Uvolní rozbalený model; při příštím použití se znovu načte. |
-| `info` | Identita modelu, jeho hash, rozměry a základní trénovací statistiky. |
+| `info` | Tag formátu a velikosti modelu používané při načítání (`tag`, `modelBytes`, `storedModelBytes`, `transformedModelBytes`). |
 
 Výstup je binární. Base64 pro přenos v JSON přidává přibližně třetinu velikosti. Maximální vstup i deklarovaný rozbalený záznam mají 64 MiB; pro velké soubory tento kompresor není optimalizovaný.
 
@@ -58,7 +58,7 @@ Před odstraněním benchmarků byla ověřena shoda všech 5 650 syntetických 
 
 Runtime předpočítává součty četností při načtení modelu a používá jedno pomocné pole pro vylučování znaků. Původní verze toto pole o velikosti 31 732 bajtů vytvářela pro každý komprimovaný nebo dekomprimovaný záznam. Nová verze každému volání přiděluje vlastní rozsah číselných značek; ošetřuje jejich přetečení i přerušení dekódování chybou. `clearCache()` uvolní také toto pole.
 
-**Model, formát 87 i komprimované bajty zůstávají stejné.** Úprava zrychluje zpracování a omezuje dočasné alokace; kompresní poměr nemění. Soubor narostl proti prvnímu vydání o 699 bajtů.
+**Model, formát 87 i komprimované bajty zůstávají stejné.** Úprava zrychluje zpracování a omezuje dočasné alokace; kompresní poměr nemění. Samotná optimalizace přidala proti prvnímu vydání 699 bajtů.
 
 Porovnání s prvním vydáním (`b52eb69`), měřeno 21. 11. 2026 na Windows x64, Node.js 24.15.0 a Intel Core i5-8250U:
 
@@ -103,7 +103,7 @@ node --max-old-space-size=8192 train-probzip.cjs
 
 Trenér čte `probzip.js` jako šablonu čitelného runtime a nahrazuje blok mezi značkami `PROBZIP_MODEL_START` a `PROBZIP_MODEL_END`. Pevný limit **256 KiB** platí pro celý výsledný soubor včetně modelu a komentářů. Objekt v prohlížeči se jmenuje `ProbZip`. Trenér nepoužívá minifikátor. Před zápisem ověří rozbalení modelu a zpětné dekódování textů i bajtů v Node.js a v izolovaném prostředí bez Node.js API.
 
-Stažené archivy, jejich SHA-256 a trénovací protokol ukládá do ignorované složky `.probzip-training/`. Příště použije cache. Přepínač `--refresh` stáhne aktuální data znovu, `--cache CESTA` změní umístění a `--help` vypíše parametry. Cache lze po trénování celou smazat. Žádné trénovací databáze nejsou součástí repozitáře.
+Stažené archivy, jejich SHA-256 a trénovací protokol `training.json` ukládá do ignorované složky `.probzip-training/`. Protokol obsahuje i hash modelu a statistiky trénování. Příště použije cache. Přepínač `--refresh` stáhne aktuální data znovu, `--cache CESTA` změní umístění a `--help` vypíše parametry. Cache lze po trénování celou smazat. Žádné trénovací databáze nejsou součástí repozitáře.
 
 | Zdroj | Co se využívá | Stažená velikost přiloženého modelu |
 | --- | --- | ---: |

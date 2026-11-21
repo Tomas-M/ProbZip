@@ -19,7 +19,15 @@ const LIMIT = 256 * 1024;
 
 const MAX_ORDER = 5;
 
-const RELEASED_BUDGET = 455668;
+const RELEASED_MODEL = {
+  budget: 455668,
+  tag: 87,
+  format: "probzip-unicode-256k-v1",
+  sha256: "4aacc71fd2f39ca99e6c1c1fa9abcb55c1aec350b977739c6425ed3e47567ac6"
+};
+
+const MODEL_START = "/* PROBZIP_MODEL_START */";
+const MODEL_END = "/* PROBZIP_MODEL_END */";
 
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 
@@ -154,59 +162,61 @@ async function downloadSource(source, options) {
 
 // A model block is the only generated part of the readable runtime. Reusing that
 // file as a template avoids a second copy of the encoder/decoder source code.
-function buildPacked(model, info, template, tag) {
+function buildPacked(model, template, tag) {
   const transformed = packModel(model);
   const stored = zlib.deflateRawSync(transformed, {
     level: 9
   });
-  const metadata = {
-    name: "ProbZip",
-    format: info.format,
-    tag: tag,
-    maxOrder: MAX_ORDER,
-    modelBytes: model.length,
-    modelBudget: info.modelBudget,
-    contextCount: info.contextCount,
-    alphabetSize: info.alphabetSize,
-    modelSha256: sha256(model),
-    storedModelBytes: stored.length,
-    transformedModelBytes: transformed.length,
-    storedModelSha256: sha256(stored),
-    training: {
-      strings: info.training.uniqueTrainingStrings,
-      utf8Bytes: info.training.trainingUtf8Bytes,
-      languages: info.training.dictionary.languages
-    }
-  };
   const block = JSON.stringify({
-    info: metadata,
+    info: {
+      tag: tag,
+      modelBytes: model.length,
+      storedModelBytes: stored.length,
+      transformedModelBytes: transformed.length
+    },
     model: stored.toString("base64")
   }, null, 2);
-  const startMarker = "/* PROBZIP_MODEL_START */";
-  const endMarker = "/* PROBZIP_MODEL_END */";
-  const start = template.indexOf(startMarker) + startMarker.length;
-  const end = template.indexOf(endMarker);
-  if (start < startMarker.length || end < start) throw new Error("Missing model template markers");
-  return template.slice(0, start) + "\n" + block + "\n" + template.slice(end);
+  const start = template.indexOf(MODEL_START) + MODEL_START.length;
+  const end = template.indexOf(MODEL_END);
+  if (start < MODEL_START.length || end < start) throw new Error("Missing model template markers");
+  return {
+    source: template.slice(0, start) + "\n" + block + "\n" + template.slice(end),
+    stored: stored,
+    transformed: transformed
+  };
 }
 
-// Verify the generated artifact before replacing a codec: its model must unpack
-// exactly, Node and browser APIs must round-trip multilingual and binary inputs.
-// This is a training-time integrity check, not a separate repository test suite.
-function verifyBuild(source, model, texts, tag) {
-  const start = source.indexOf("/* PROBZIP_MODEL_START */") + "/* PROBZIP_MODEL_START */".length;
-  const end = source.indexOf("/* PROBZIP_MODEL_END */");
+function readModelDefinition(source) {
+  const start = source.indexOf(MODEL_START) + MODEL_START.length;
+  const end = source.indexOf(MODEL_END);
+  if (start < MODEL_START.length || end < start) throw new Error("Missing model template markers");
   const definition = JSON.parse(source.slice(start, end));
+  return {
+    info: definition.info,
+    stored: Buffer.from(definition.model, "base64")
+  };
+}
+
+function matchesModel(previous, build) {
+  if (previous.info.transformedModelBytes !== build.transformed.length) return false;
+  // The prefix/delta representation is lossless and independent of zlib.
+  return previous.stored.equals(build.stored) ||
+    zlib.inflateRawSync(previous.stored).equals(build.transformed);
+}
+
+// Verify exact model storage and round trips in both Node and a browser-like VM.
+function verifyBuild(source, model, texts, tag) {
+  const definition = readModelDefinition(source);
   const sandbox = {
     TextEncoder: TextEncoder,
     TextDecoder: TextDecoder,
     atob: s => Buffer.from(s, "base64").toString("binary")
   };
-  // Expose the internal unpacker only in this isolated verification instance.
+  // Expose the internal unpacker only inside this sandbox.
   const instrumented = source.replace("const codec = createProbZipUnicode(definition);", "root.restoreModel = unpackProbZipStorage; const codec = createProbZipUnicode(definition);");
   vm.runInNewContext(instrumented, sandbox);
   if (!sandbox.restoreModel) throw new Error("Missing verification hook");
-  const restored = sandbox.restoreModel(zlib.inflateRawSync(Buffer.from(definition.model, "base64")), model.length);
+  const restored = sandbox.restoreModel(zlib.inflateRawSync(definition.stored), definition.info.modelBytes);
   if (!model.equals(Buffer.from(restored))) throw new Error("Model storage is not lossless");
   const cases = [ "", "\0\ufeff\ud800", "Petra Novotná, Jabloňová 28, 602 00 Brno", "東京都新宿区西新宿一丁目", "台北市中正區忠孝東路123號", "Nguyễn Văn An, Hà Nội", "สมชาย สุขใจ ถนนสุขุมวิท", "İpek Yılmaz, İstanbul" ];
   const step = Math.max(1, Math.floor(texts.length / 300));
@@ -551,11 +561,11 @@ function script(cp) {
 }
 
 async function train(options, downloads) {
-  const template = fs.readFileSync(path.join(__dirname, "probzip.js"), "utf8");
-  const current = require("./probzip.js");
+  const runtimeFile = path.join(__dirname, "probzip.js");
+  const template = fs.readFileSync(runtimeFile, "utf8");
+  const current = readModelDefinition(template);
   const tag = options.tag ?? current.info.tag;
   const limit = LIMIT;
-  const stem = "probzip";
   const {texts, weights, manifest} = await prepare(downloads);
   console.log("Training " + texts.length + " strings with " + manifest.dictionary.languages.length + " dictionary language groups");
   const counts = new Map;
@@ -720,14 +730,12 @@ async function train(options, downloads) {
     }
     const info = {
       name: "ProbZip Unicode " + limit / 1024 + " KiB Multilingual",
-      format: stem + "-v1",
       algorithm: "Static multilingual Unicode contexts, PPM escape/full exclusion, 32-bit arithmetic coding",
       maxOrder: MAX_ORDER,
       modelBytes: model.length,
       modelBudget: budget,
       contextCount: kept.length,
       alphabetSize: alphabet.length,
-      modelSha256: sha256(model),
       scriptStorageBytes: storage,
       training: {
         ...manifest,
@@ -755,14 +763,10 @@ async function train(options, downloads) {
   }
   // Keep the released model exactly when the source snapshots are unchanged.
   // Otherwise measure the entire readable file, including comments and Base64.
-  let candidate = selectModel(RELEASED_BUDGET);
+  let candidate = selectModel(RELEASED_MODEL.budget);
   let best = null, trials = 0;
-  const makeOutput = candidate => {
-    candidate.info.format = candidate.info.modelSha256 === current.info.modelSha256 && tag === current.info.tag ? current.info.format : "probzip-" + tag + "-" + candidate.info.modelSha256.slice(0, 12);
-    return buildPacked(candidate.model, candidate.info, template, tag);
-  };
-  let output = makeOutput(candidate);
-  if (candidate.info.modelSha256 === current.info.modelSha256 && Buffer.byteLength(output) <= limit) {
+  let output = buildPacked(candidate.model, template, tag);
+  if (Buffer.byteLength(output.source) <= limit && matchesModel(current, output)) {
     best = {
       ...candidate,
       output: output
@@ -775,37 +779,41 @@ async function train(options, downloads) {
     while (low <= high) {
       const budget = Math.floor((low + high) / 2);
       candidate = selectModel(budget);
-      output = makeOutput(candidate);
+      output = buildPacked(candidate.model, template, tag);
       trials++;
-      if (Buffer.byteLength(output) <= limit) {
+      const javascriptBytes = Buffer.byteLength(output.source);
+      if (javascriptBytes <= limit) {
         best = {
           ...candidate,
           output: output
         };
         low = budget + 1;
       } else high = budget - 1;
-      console.log("Size search " + trials + ": " + Buffer.byteLength(output) + " / " + limit + " bytes");
+      console.log("Size search " + trials + ": " + javascriptBytes + " / " + limit + " bytes");
     }
   }
   if (!best) throw new Error("No model fits the complete " + limit / 1024 + " KiB JavaScript budget");
   // Protect the shipped format and a previously written custom output. A tag
   // identifies probabilities, so reusing it for another model would corrupt data.
-  const publishedFiles = new Set([
-    path.join(__dirname, "probzip.js"),
-    options.output
-  ]);
+  const publishedFiles = new Set([runtimeFile, options.output]);
   for (const file of publishedFiles) {
     if (!fs.existsSync(file)) continue;
-    const previous = require(file);
-    if (previous.info.tag === tag && previous.info.modelSha256 !== best.info.modelSha256) {
+    const previous = file === runtimeFile ? current : readModelDefinition(fs.readFileSync(file, "utf8"));
+    if (previous.info.tag === tag && !matchesModel(previous, best.output)) {
       throw new Error("Format tag " + tag + " already belongs to a different model in " + path.basename(file) + "; choose an unused --tag. Nothing was overwritten.");
     }
   }
-  verifyBuild(best.output, best.model, texts, tag);
+  verifyBuild(best.output.source, best.model, texts, tag);
+  const modelSha256 = sha256(best.model);
+  const format = tag === RELEASED_MODEL.tag && modelSha256 === RELEASED_MODEL.sha256
+    ? RELEASED_MODEL.format
+    : "probzip-" + tag + "-" + modelSha256.slice(0, 12);
   const report = {
     ...best.info,
+    format: format,
     tag: tag,
-    javascriptBytes: Buffer.byteLength(best.output),
+    modelSha256: modelSha256,
+    javascriptBytes: Buffer.byteLength(best.output.source),
     nodeVersion: process.version,
     zlibVersion: process.versions.zlib,
     sources: manifest.sources
@@ -814,13 +822,13 @@ async function train(options, downloads) {
   fs.mkdirSync(path.dirname(options.output), {
     recursive: true
   });
-  fs.writeFileSync(options.output + ".part", best.output);
+  fs.writeFileSync(options.output + ".part", best.output.source);
   fs.renameSync(options.output + ".part", options.output);
   console.log(JSON.stringify({
     output: options.output,
     javascriptBytes: report.javascriptBytes,
     tag: tag,
-    modelSha256: best.info.modelSha256,
+    modelSha256: modelSha256,
     contexts: best.info.contextCount,
     trials: trials
   }, null, 2));

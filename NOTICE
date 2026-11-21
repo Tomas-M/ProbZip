@@ -73,9 +73,9 @@ libpostal address dictionaries
 
 The live GeoNames and postal URLs may change. Archive hashes above identify the
 released snapshot; future training records its own sources in the ignored cache.
-Keep the required data attributions with models you redistribute. If training
-changes the model, its runtime info and training receipt identify that new model;
-the release hashes in this NOTICE continue to describe the original release.
+Keep the required data attributions with models you redistribute. The training
+receipt records the format tag and SHA-256 of a newly trained model. The release
+hashes in this NOTICE describe the original release.
 
 The MIT License (MIT)
 
