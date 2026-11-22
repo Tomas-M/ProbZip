@@ -14,7 +14,7 @@ In a browser:
 <meta charset="utf-8">
 <script src="probzip.js"></script>
 <script>
-  const text = "Petra Novotná, Jabloňová 28, 602 00 Brno";
+  const text = "İpek Yılmaz, Çiçek Sokak 28, Kadıköy, İstanbul";
   const packed = ProbZip.encode(text); // Uint8Array including the header
   const restored = ProbZip.decode(packed);
   console.log(packed.length, restored);
